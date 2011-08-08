@@ -657,8 +657,8 @@ MINIDUMP_EXCEPTION = Struct('MINIDUMP_EXCEPTION',
   ULInt64('ExceptionAddress'),
   ULInt32('NumberParameters'),
   ULInt32('__unusedAlignment'),
-  #fuck!!!! YOU MOTHERFUCKER!!!
-  #ExceptionInformation array is EXCEPTION_MAXIMUM_PARAMETERS in length!!!
+  # *obscenity* removed
+  #ExceptionInformation array is EXCEPTION_MAXIMUM_PARAMETERS in length
   #Array(lambda ctx: ctx.NumberParameters, ULInt64('ExceptionInformation')),
   Array(lambda ctx: EXCEPTION_MAXIMUM_PARAMETERS, ULInt64('ExceptionInformation')),
 )
