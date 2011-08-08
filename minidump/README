@@ -1,0 +1,6 @@
+Original code found here: http://moyix.blogspot.com/2008/05/parsing-windows-minidumps.html
+
+* Issues:
+	userdump stream handling disabled : it is probably better delegated to a post-processing step since 3rd parties will almost certainly re-use next available stream id for something private - I know of one such case and it ain't WindowHandleInfoStream
+	exception stream : number of parameters is not NumberParameters but EXCEPTION_MAXIMUM_PARAMETERS
+	when run from command line, open() dump files in binary mode

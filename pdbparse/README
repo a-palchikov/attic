@@ -1,2 +1,14 @@
 pdbparse - Open-source parser for Microsoft debug symbols (PDB files)
 URL	 - http://code.google.com/p/pdbparse
+
+* Issues:
+	restructured DBI header (with GSI/PSI links)
+	rewrite of TPI container : dword-aligned w/o having to byte-peek
+	some leaf types might be empty (i.e. lfFieldList)
+	lfPointer padding
+	`type' descriptor records a length Value
+	post-processing woes:
+		resolve_typedefs(): 
+			filter out leafs with missing type info
+		resolve_typedefs(), merge_fwdrefs():
+			empty arg_lists
