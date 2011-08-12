@@ -1,14 +1,11 @@
 #!/usr/bin/env python
 
 from construct import *
-from pdbparse.utils import aligned4
+from pdbparse.utils import aligned4, get_parsed_size
 
 _ALIGN = 4
 
-def get_parsed_size(tp,con):
-    return len(tp.build(con))
-
-def SymbolRange(name): 
+def SymbolRange(name):
     return Struct(name,
         SLInt16("segment"),
         Padding(2),
@@ -42,11 +39,11 @@ DBIHeader = Struct("DBIHeader",
 DBIHeader = Struct("DBIHeader",
     Const(Bytes("magic", 4), "\xFF\xFF\xFF\xFF"),
     ULInt32("version"),
-    ULInt32("pdb_age"),     # PDB age field (?)
+    ULInt32("pdb_age"),     # PDB age field
     ULInt16("gsi_stream"),  # GSI (global symbols) stream #
-    ULInt16("dll_version"), # DLL version (major.minor)
+    ULInt16("dll_version"), # DLL version (major.minor) (?)
     ULInt16("psi_stream"),  # PSI (public symbols) stream #
-    ULInt16("dll_build"),   # DLL build number
+    ULInt16("dll_build"),   # DLL build number (?)
     ULInt16("sym_stream"),  # Sym stream
     ULInt16("_pad"),        # padding to DWORD boundary
     ULInt32("module_size"), # total size of DBIExHeaders
@@ -54,7 +51,12 @@ DBIHeader = Struct("DBIHeader",
     ULInt32("hash_size"),
     ULInt32("srcmodule_size"),
     ULInt32("pdbimport_size"),
-    Array(5, ULInt32("resvd")),
+    ULInt32("resvd0"),      #Array(5, ULInt32("resvd")),
+    ULInt32("stream_index_size"),
+    ULInt32("unk2_size"),
+    ULInt16("resvd3"),
+    ULInt16("machine"),
+    ULInt32("resvd4"),
 )
 
 DBIExHeader = Struct("DBIExHeader",
@@ -106,6 +108,27 @@ def OffsetData(sz):
 def PdbImportData(sz):
     return HexDumpAdapter(String("PdbImportData", sz))
 
+def Unknown2Data(sz):
+    return HexDumpAdapter(String("Unknown2Data", sz))
+
+# links to FPO streams
+"""
+def StreamIndexesData():
+    return Struct('stream_indexes',
+            ULInt16('FPO'),
+            ULInt16('unk0'),
+            ULInt16('unk1'),
+            ULInt16('unk2'),
+            ULInt16('unk3'),
+            ULInt16('segments'),
+            ULInt16('unk4'),
+            ULInt16('unk5'),
+            ULInt16('unk6'),
+            ULInt16('FPO_EXT'),
+            ULInt16('unk7'),
+    )
+"""
+
 def parse_stream(stream):
     pos = 0
     dbihdr = DBIHeader.parse_stream(stream)
@@ -124,10 +147,14 @@ def parse_stream(stream):
     hashdata = HashData(dbihdr.hash_size).parse_stream(stream)
     srcmoduledata = SrcModuleData(dbihdr.srcmodule_size).parse_stream(stream)
     pdbimportdata = PdbImportData(dbihdr.pdbimport_size).parse_stream(stream)
+    unknown2data = Unknown2Data(dbihdr.unk2_size).parse_stream(stream)
+    import psi
+    streamindexesdata = psi.parse_stream(stream)
 
     return Container(DBIHeader=dbihdr, DBIExHeaders=ListContainer(dbiexhdrs),
                      OffsetData=offdata, HashData=hashdata,
-                     SrcModuleData=srcmoduledata, PdbImportData=pdbimportdata)
+                     SrcModuleData=srcmoduledata, PdbImportData=pdbimportdata,
+                     StreamIndexesData=streamindexesdata)
 
 def parse(data):
     return parse_stream(StringIO(data))

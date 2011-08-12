@@ -2,9 +2,12 @@
 
 from construct import *
 
-__all__ = ['PrintContext', 'AlignedStruct4', 'merge_subcon', 'aligned4']
+__all__ = ['PrintContext', 'AlignedStruct4', 'merge_subcon', 'aligned4', 'get_parsed_size']
 
 DWORD_ = 4
+
+def get_parsed_size(tp, ctx):
+    return len(tp.build(ctx))
 
 class PrintContext(Construct):
     def _parse(self, stream, context):

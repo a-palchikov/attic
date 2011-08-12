@@ -1,4 +1,7 @@
+#!/usr/bin/env python
+
 from construct import *
+from pdbparse.utils import get_parsed_size
 
 # FPO DATA
 FPO_DATA = Struct("FPO_DATA",
@@ -16,17 +19,27 @@ FPO_DATA = Struct("FPO_DATA",
     ),
 )
 
+FPOFlags = FlagsEnum(ULInt32('FPO_FLAGS'),
+    PDB_FPO_NONE          = 0x00000000,
+    PDB_FPO_DFL_SEH       = 0x00000001,
+    PDB_FPO_DFL_EH        = 0x00000002,
+    PDB_FPO_DFL_IN_BLOCK  = 0x00000004,
+    #_default_             = Pass,
+)
+
 # New style FPO records with program strings
 FPO_DATA_V2 = Struct("FPO_DATA_V2",
+    Anchor("_start"),
     ULInt32("ulOffStart"),
     ULInt32("cbProcSize"),
     ULInt32("cbLocals"),
     ULInt32("cbParams"),
-    ULInt32("Unk1"),        # always 0
+    ULInt32("cbMaxStack"),        # always 0
     ULInt32("ProgramStringOffset"),
     ULInt16("cbProlog"),
     ULInt16("cbSavedRegs"),
-    ULInt32("Unk2"),        # some kind of flags. 0,1,4,5
+    FPOFlags,
+    Anchor("_end"),
 )
 
 # Ranges for both types
@@ -40,14 +53,36 @@ FPO_STRING_DATA = Struct("FPO_STRING_DATA",
     Const(Bytes("Signature",4), "\xFE\xEF\xFE\xEF"),
     ULInt32("Unk1"),
     ULInt32("szDataLen"),
-    Union("StringData",
-        String("Data",lambda ctx: ctx._.szDataLen),
+    Rename("StringData",
         Tunnel(
-            String("Strings",lambda ctx: ctx._.szDataLen),
+            String("Strings", lambda ctx: ctx.szDataLen),
             GreedyRange(CString("Strings")),
         ),
     ),
     ULInt32("lastDwIndex"), # data remaining = (last_dword_index+1)*4
-    HexDumpAdapter(String("UnkData", lambda ctx: ((ctx.lastDwIndex+1)*4))),
-    Terminator,
+    OnDemand(HexDumpAdapter(String("UnkData", lambda ctx: ((ctx.lastDwIndex+1)*4)))),
+    #Terminator,
 )
+
+def parse(data, sz):
+    return parse_stream(StringIO(data), sz)
+
+def parse_stream(stream, sz):
+    record = FPO_DATA_V2.parse_stream(stream)
+    record_size = record._end - record._start
+
+    try:
+        records = Array(lambda ctx: sz / record_size - 1, FPO_DATA_V2).parse_stream(stream)
+    except ArrayError, ex:
+        import traceback
+        traceback.print_exc()
+        #pdb.set_trace()
+
+    return records
+
+    """
+        Tunnel(
+            String('FPO_RECORDS', lambda ctx: sz / record_size),
+            GreedyRange(FPO_DATA_V2),
+        ).parse_stream(stream)
+    """

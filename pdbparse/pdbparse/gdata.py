@@ -27,15 +27,20 @@ symUdt = Struct('udt',
     CString('name'),
 )
 
+sym_id = Enum(ULInt16('sym_id'),
+    S_PUB32           = 0x110E,
+    S_PROCREF         = 0x1125,
+    S_LPROCREF        = 0x1127,
+)
+
 gsym = Struct("global",
-    ULInt16("leaf_type"),
-    Switch("data", lambda ctx: ctx.leaf_type,
+    #ULInt16("leaf_type"),
+    sym_id,
+    Switch("data", lambda ctx: ctx.sym_id,
         {
-            0x110E : symPub,
-            0x1125 : symProc,
-            0x1127 : symProc,   # local proc ref
-            #0x1107 : symConst,
-            #0x1108 : symUdt,   # user-defined type
+            'S_PUB32': symPub,
+            'S_PROCREF': symProc,
+            'S_LPROCREF': symProc,   # local proc ref
         },
         default = Pass,
     ),
