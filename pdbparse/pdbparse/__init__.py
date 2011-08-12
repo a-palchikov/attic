@@ -209,6 +209,7 @@ class PDBTypeStream(PDBStream):
     def __init__(self, fp, pages, index=PDB_STREAM_TPI, size=-1,
             page_size=0x1000):
         PDBStream.__init__(self, fp, pages, index, size=size, page_size=page_size)
+        #self.load()
     def load(self,unnamed_hack=True,elim_fwdrefs=True):
         import tpi
         tpis = tpi.parse_stream(self.stream_file,unnamed_hack,elim_fwdrefs)
@@ -294,9 +295,9 @@ _stream_types2 = {
 }
 
 class PDB:
-    def __init__(self, fp, fast_load=False):
+    def __init__(self, fp, load_type_info=False):
         self.fp = fp
-        self.fast_load = fast_load
+        self.load_type_info = load_type_info
 
     def read(self, pages, size=-1):
         """Read a portion of this PDB file, given a list of pages.
@@ -327,9 +328,11 @@ class PDB:
             except KeyError:
                 pdb_cls = PDBStream
             stream_size, stream_pages = rs.streams[i]
-            self.streams.append(
-                pdb_cls(self.fp, stream_pages, i, size=stream_size,
-                    page_size=self.page_size))
+            pdb_stream = pdb_cls(self.fp, stream_pages, i, size=stream_size,
+                                page_size=self.page_size)
+            self.streams.append(pdb_stream)
+            if isinstance(pdb_stream, PDBTypeStream) and self.load_type_info:
+                pdb_stream.load()
 
 class PDB7(PDB):
     """Class representing a Microsoft PDB file, version 7.
@@ -339,8 +342,8 @@ class PDB7(PDB):
 
     """
 
-    def __init__(self, fp, fast_load=False):
-        PDB.__init__(self, fp, fast_load)
+    def __init__(self, fp, load_type_info=False):
+        PDB.__init__(self, fp, load_type_info)
         (self.signature, self.page_size, alloc_table_ptr,
          self.num_file_pages, root_size, reserved,
          root_index) = unpack(_PDB7_FMT, self.fp.read(_PDB7_FMT_SIZE))
@@ -384,8 +387,8 @@ class PDB7(PDB):
         #pdb.set_trace()
 
 class PDB2(PDB):
-    def __init__(self, fp, fast_load=False):
-        PDB.__init__(self, fp, fast_load)
+    def __init__(self, fp, load_type_info=False):
+        PDB.__init__(self, fp, load_type_info)
         (self.signature, self.page_size, start_page,
          self.num_file_pages, root_size, reserved) = unpack(_PDB2_FMT, 
                  self.fp.read(_PDB2_FMT_SIZE))
@@ -413,16 +416,16 @@ class PDB2(PDB):
 #            self.streams[gsf] = PDBGlobalSymbolStream(self.fp, self.streams[gsf].pages,
 #                gsf, size=self.streams[gsf].size, page_size=self.page_size,
 #
-def parse(filename, fast_load=False):
+def parse(filename, load_type_info=False):
     "Open a PDB file and autodetect its version"
     f = open(filename, 'rb')
     sig = f.read(_PDB7_SIGNATURE_LEN)
     f.seek(0)
     if sig == _PDB7_SIGNATURE:
-        return PDB7(f, fast_load)
+        return PDB7(f, load_type_info)
     else:
         sig = f.read(_PDB2_SIGNATURE_LEN)
         if sig == _PDB2_SIGNATURE:
             f.seek(0)
-            return PDB2(f, fast_load)
+            return PDB2(f, load_type_info)
     raise ValueError("Unsupported file type")

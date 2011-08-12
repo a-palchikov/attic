@@ -111,9 +111,16 @@ def proc_str(proc):
     return "function(%s)" % ", ".join(argstrs)
 
 def memb_str(memb):
-    off = memb.offset
-    tpname = get_tpname(memb.index)
-    return "%#x: %s (%s)" % (off, memb.name, tpname)
+    #off = memb.offset
+    off = getattr(memb, 'offset', None)
+    if getattr(memb, 'index', None) is not None:
+        tpname = get_tpname(memb.index)
+    else:
+        tpname = '<unk. type>'
+    if off is not None:
+        return "%#x: %s (%s)" % (off, memb.name, tpname)
+    else:
+        return "<unk. offset>: %s (%s)" % (getattr(memb, 'name', '<unnamed>'), tpname)
 
 def struct_pretty_str(lf):
     return (lf.name + (", %#x bytes\n    " % lf.size) + 

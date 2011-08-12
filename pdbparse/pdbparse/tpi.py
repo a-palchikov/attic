@@ -8,7 +8,7 @@ from cStringIO import StringIO
 
 # ap: debugging
 import pdb
-from utils import PrintContext, AlignedStruct4, merge_subcon
+from utils import PrintContext, AlignedStruct4, merge_subcon, AltBitStruct
 
 def dump_types(types, fname):
     with open(fname, 'w') as f:
@@ -832,9 +832,10 @@ lfMFunc = AlignedStruct4("lfMFunc",
     SLInt32("thisadjust"),
 ) 
 
+#BitStruct("vt_descriptors",
 lfVTShape = Struct("lfVTShape",
     ULInt16("count"),
-    BitStruct("vt_descriptors",
+    AltBitStruct("vt_descriptors",
         Array(lambda ctx: ctx._.count,
             BitField("vt_descriptors", 4)
         )
