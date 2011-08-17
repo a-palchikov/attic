@@ -70,11 +70,11 @@ class StreamFile:
     def _get_page(self, offset):
         return (offset / self.page_size, offset % self.page_size)
     def _read_pages(self, pages):
-        s = ''
+        s = []
         for pn in pages:
            self.fp.seek(pn*self.page_size)
-           s += self.fp.read(self.page_size)
-        return s
+           s.append(self.fp.read(self.page_size))
+        return ''.join(s)
 
 class PDBStream:
     """Base class for PDB stream types.
@@ -102,7 +102,7 @@ class PDBStream:
         else: self.size = size
         self.stream_file = StreamFile(fp, pages, size=size, page_size=page_size)
 
-    # default load grabs the first page wrapped as HexDumpAdapter
+    # default load grabs the first page wrapped with HexDumpAdapter
     def load(self):
         self.raw_buffer = HexDumpAdapter(String('Raw_Data', self.page_size)).parse_stream(self.stream_file)
 
@@ -159,7 +159,7 @@ class PDB2RootStream(PDBStream):
         
         (self.num_streams, reserved) = unpack("<HH", data[:4])
         
-        # num_streams 
+        # num_streams
         rs = data[4:]
         sizes = []
         for i in range(0,self.num_streams*8,8):
@@ -226,7 +226,7 @@ class PDBDebugStream(PDBStream):
         PDBStream.__init__(self, fp, pages, index, size=size, page_size=page_size)
         self.load()
     def load(self):
-        import dbi 
+        import dbi
         debug = dbi.parse_stream(self.stream_file)
 
         self.version = debug.DBIHeader.version
@@ -240,21 +240,26 @@ class PDBDebugStream(PDBStream):
         self.srcmodule_size = debug.DBIHeader.srcmodule_size
         self.pdbimport_size = debug.DBIHeader.pdbimport_size
         self.fpoext_stream_no = debug.StreamIndexesData.FPO_EXT
-        self.exhdr = debug.DBIExHeaders
+        self.exhdrs = debug.DBIExHeaders
         
         #pdb.set_trace()
-
         del debug
 
 class PDBGlobalSymbolStream(PDBStream):
-    def __init__(self, fp, pages, index=PDB_STREAM_PDB, size=-1,
-            page_size=0x1000):
+    def __init__(self, fp, pages, index=PDB_STREAM_PDB, size=-1, page_size=0x1000):
         PDBStream.__init__(self, fp, pages, index, size=size, page_size=page_size)
         self.load()
     def load(self):
         import gdata
         self.globals = gdata.parse_stream(self.stream_file)
-        self.funcs = {g.offset : g for g in self.globals if getattr(g, 'symtype', None) is not None and g.symtype == 0x2}
+
+        #pdb.set_trace()
+        #self.funcs = {g.offset : g for g in globals if getattr(g, 'symtype', None) is not None and g.symtype == 0x2}
+
+        # ap: give priority to private symbols (SYMOPT_NO_PUBLICS)
+        #self.funcs = {g.data.offset : g for g in self.globals if getattr(g.data, 'symtype', None) is None}
+        #self.funcs.sort()
+
         # ap(todo): extract more information
         del self.globals
 
@@ -283,8 +288,6 @@ _stream_types7 = {
     PDB_STREAM_TPI: PDBTypeStream,
     PDB_STREAM_PDB: PDBInfoStream,
     PDB_STREAM_DBI: PDBDebugStream,
-    #PDB_STREAM_FPO: PDBFPOStream,
-    #PDB_STREAM_FPO: PDBPSIStream,
 }
 
 _stream_types2 = {
@@ -310,11 +313,12 @@ class PDB:
         assert size <= len(pages)*self.page_size
 
         pos = self.fp.tell()
-        s = ''
+        s = []
         for pn in pages:
            self.fp.seek(pn*self.page_size)
-           s += self.fp.read(self.page_size)
+           s.append(self.fp.read(self.page_size))
         self.fp.seek(pos)
+        s = ''.join(s)
         if size == -1:
             return s
         else:
@@ -373,6 +377,13 @@ class PDB7(PDB):
             self.streams[sno] = PDBGlobalSymbolStream(self.fp, self.streams[sno].pages,
                 sno, size=self.streams[sno].size, page_size=self.page_size)
 
+        # Load all modules
+        if len(self.streams[PDB_STREAM_DBI].exhdrs) > 0:
+            for module in self.streams[PDB_STREAM_DBI].exhdrs:
+                sno = module.file
+                self.streams[sno] = PDBGlobalSymbolStream(self.fp, self.streams[sno].pages,
+                    sno, size=self.streams[sno].size, page_size=self.page_size)
+
         # Load FPO data if available
         if self.streams[PDB_STREAM_DBI].fpoext_stream_no is not None:
             sno = self.streams[PDB_STREAM_DBI].fpoext_stream_no
@@ -383,8 +394,6 @@ class PDB7(PDB):
             sno = self.streams[PDB_STREAM_PDB].names['/names']
             self.streams[sno] = PDBNamesStream(self.fp, self.streams[sno].pages,
                 sno, size=self.streams[sno].size, page_size=self.page_size)
-
-        #pdb.set_trace()
 
 class PDB2(PDB):
     def __init__(self, fp, load_type_info=False):

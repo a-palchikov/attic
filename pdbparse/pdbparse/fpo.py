@@ -53,12 +53,16 @@ FPO_STRING_DATA = Struct("FPO_STRING_DATA",
     Const(Bytes("Signature",4), "\xFE\xEF\xFE\xEF"),
     ULInt32("Unk1"),
     ULInt32("szDataLen"),
-    Rename("StringData",
-        Tunnel(
-            String("Strings", lambda ctx: ctx.szDataLen),
-            GreedyRange(CString("Strings")),
-        ),
-    ),
+
+    # ap: switched to hex for debugging purposes
+    HexDumpAdapter(String("Strings", lambda ctx: ctx.szDataLen)),
+    #Rename("StringData",
+    #    Tunnel(
+    #        String("Strings", lambda ctx: ctx.szDataLen),
+    #        GreedyRange(CString("Strings")),
+    #    ),
+    #),
+
     ULInt32("lastDwIndex"), # data remaining = (last_dword_index+1)*4
     OnDemand(HexDumpAdapter(String("UnkData", lambda ctx: ((ctx.lastDwIndex+1)*4)))),
     #Terminator,

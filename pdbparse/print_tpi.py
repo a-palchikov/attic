@@ -92,7 +92,7 @@ def bit_str(bitf):
 
 def arr_str(arr):
     tpname = get_tpname(arr.element_type)
-    count = arr.size / get_size(arr.element_type) 
+    count = arr.size / get_size(arr.element_type)
     return "array %s[%d]" % (tpname, count)
 
 def mod_str(mod):
@@ -123,7 +123,7 @@ def memb_str(memb):
         return "<unk. offset>: %s (%s)" % (getattr(memb, 'name', '<unnamed>'), tpname)
 
 def struct_pretty_str(lf):
-    return (lf.name + (", %#x bytes\n    " % lf.size) + 
+    return (lf.name + (", %#x bytes\n    " % lf.size) +
             "\n    ".join(memb_str(s) for s in lf.fieldlist.substructs))
 
 def enum_pretty_str(enum):
@@ -132,10 +132,10 @@ def enum_pretty_str(enum):
     for e in enum.fieldlist.substructs:
         e_val = -1 if e.enum_value == '\xff' else e.enum_value
         enumerated.append("%s = %d" % (e.name, e_val))
-    return (enum.name + (" (%s)\n    " % utypename) + 
+    return (enum.name + (" (%s)\n    " % utypename) +
             "\n    ".join(enumerated))
 
-pdb = pdbparse.parse(sys.argv[1])
+pdb = pdbparse.parse(sys.argv[1], load_type_info=True)
 structs = [ s for s in pdb.streams[2].types.values() if (s.leaf_type == "LF_STRUCTURE" or s.leaf_type == "LF_UNION") and not s.prop.fwdref ]
 enums = [ e for e in pdb.streams[2].types.values() if e.leaf_type == "LF_ENUM" and not e.prop.fwdref ]
 

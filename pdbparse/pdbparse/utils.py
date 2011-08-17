@@ -3,12 +3,15 @@
 from construct import *
 from construct.lib import BitStreamReader, BitStreamWriter
 
-__all__ = ['PrintContext', 'AlignedStruct4', 'merge_subcon', 'aligned4', 'get_parsed_size']
+__all__ = ['PrintContext', 'AlignedStruct4', 'SizedStruct', 'merge_subcon', 'aligned4', 'get_parsed_size']
 
 DWORD_ = 4
 
-def get_parsed_size(tp, ctx):
-    return len(tp.build(ctx))
+#def get_parsed_size(tp, ctx):
+#    return len(tp.build(ctx))
+#
+def get_parsed_size(con):
+    return con._end - con._start
 
 class PrintContext(Construct):
     def _parse(self, stream, context):
@@ -40,11 +43,12 @@ def AltBitStruct(name, *subcons):
             stream_writer = BitStreamWriter,
             resizer = resizer)
 
-class AlignedStruct4(Struct):
+class SizedStruct(Struct):
     def __init__(self, name, *subcons, **kw):
         subcons = (Anchor("_start"),) + subcons + (Anchor("_end"),)
         Struct.__init__(self, name, *subcons, **kw)
 
+class AlignedStruct4(SizedStruct):
     def _parse(self, stream, context):
         data = Struct._parse(self, stream, context)
         size = data._end - data._start
@@ -53,17 +57,6 @@ class AlignedStruct4(Struct):
             # ignore the input
             stream.read(aligned_length - size)
         return data
-
-    ## ap(todo) implement building
-    ##def _build(self, ...):
-    ##    pass
-
-    """
-    def _sizeof(self, context):
-        pdb.set_trace()
-        size = Struct._sizeof(self, context)
-        return (size + (AlignedStruct4.DWORD_ - 1)) & (0 - AlignedStruct4.DWORD_)
-    """
 
 def merge_subcon(parent, subattr):
     """Merge a subcon's fields into its parent.

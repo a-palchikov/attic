@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from construct import *
-from pdbparse.utils import aligned4, get_parsed_size
+from pdbparse.utils import aligned4, get_parsed_size, SizedStruct
 
 _ALIGN = 4
 
@@ -18,31 +18,13 @@ def SymbolRange(name):
         ULInt32("unknown"),
     )
 
-"""
-# ap(g1009): more information required!..
-DBIHeader = Struct("DBIHeader",
-    Const(Bytes("magic", 4), "\xFF\xFF\xFF\xFF"),
-    ULInt32("version"),
-    ULInt32("unknown"),
-    ULInt32("hash1_file"),
-    ULInt32("hash2_file"),
-    ULInt16("gsym_file"),           # stream containing global symbols
-    ULInt16("unknown2"),
-    ULInt32("module_size"),         # total size of DBIExHeaders
-    ULInt32("offset_size"),
-    ULInt32("hash_size"),
-    ULInt32("srcmodule_size"),
-    ULInt32("pdbimport_size"),
-    Array(5, ULInt32("resvd")),
-)
-"""
-DBIHeader = Struct("DBIHeader",
+DBIHeader = SizedStruct("DBIHeader",
     Const(Bytes("magic", 4), "\xFF\xFF\xFF\xFF"),
     ULInt32("version"),
     ULInt32("pdb_age"),     # PDB age field
-    ULInt16("gsi_stream"),  # GSI (global symbols) stream #
+    ULInt16("gsi_stream"),  # global symbols stream #
     ULInt16("dll_version"), # DLL version (major.minor) (?)
-    ULInt16("psi_stream"),  # PSI (public symbols) stream #
+    ULInt16("psi_stream"),  # public symbols stream #
     ULInt16("dll_build"),   # DLL build number (?)
     ULInt16("sym_stream"),  # Sym stream
     ULInt16("_pad"),        # padding to DWORD boundary
@@ -51,7 +33,7 @@ DBIHeader = Struct("DBIHeader",
     ULInt32("hash_size"),
     ULInt32("srcmodule_size"),
     ULInt32("pdbimport_size"),
-    ULInt32("resvd0"),      #Array(5, ULInt32("resvd")),
+    ULInt32("resvd0"),
     ULInt32("stream_index_size"),
     ULInt32("unk2_size"),
     ULInt16("resvd3"),
@@ -59,7 +41,7 @@ DBIHeader = Struct("DBIHeader",
     ULInt32("resvd4"),
 )
 
-DBIExHeader = Struct("DBIExHeader",
+DBIExHeader = SizedStruct("DBIExHeader",
     ULInt32("unknown1"),
     SymbolRange("range"),
     ULInt16("flag"),
@@ -111,36 +93,15 @@ def PdbImportData(sz):
 def Unknown2Data(sz):
     return HexDumpAdapter(String("Unknown2Data", sz))
 
-# links to FPO streams
-"""
-def StreamIndexesData():
-    return Struct('stream_indexes',
-            ULInt16('FPO'),
-            ULInt16('unk0'),
-            ULInt16('unk1'),
-            ULInt16('unk2'),
-            ULInt16('unk3'),
-            ULInt16('segments'),
-            ULInt16('unk4'),
-            ULInt16('unk5'),
-            ULInt16('unk6'),
-            ULInt16('FPO_EXT'),
-            ULInt16('unk7'),
-    )
-"""
-
 def parse_stream(stream):
-    pos = 0
     dbihdr = DBIHeader.parse_stream(stream)
-    pos += get_parsed_size(DBIHeader, dbihdr)
-    stream.seek(pos)
+    dbi_size = dbihdr._end - dbihdr._start
     dbiexhdr_data = stream.read(dbihdr.module_size)
 
     dbiexhdrs = []
     while dbiexhdr_data:
         dbiexhdrs.append(DBIExHeader.parse(dbiexhdr_data))
-        sz = aligned4(get_parsed_size(DBIExHeader,dbiexhdrs[-1]))
-        #if sz % _ALIGN != 0: sz = sz + (_ALIGN - (sz % _ALIGN))
+        sz = aligned4(get_parsed_size(dbiexhdrs[-1]))
         dbiexhdr_data = dbiexhdr_data[sz:]
     
     offdata = OffsetData(dbihdr.offset_size).parse_stream(stream)
