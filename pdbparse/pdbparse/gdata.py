@@ -89,13 +89,14 @@ GlobalsData = GreedyRange(Struct("globals",
     ),
 ))
 
-def parse(data):
-    return parse_stream(StringIO(data))
+def parse(data, offset):
+    return parse_stream(StringIO(data), offset)
 
-def parse_stream(stream):
+def parse_stream(stream, offset):
+    if offset > 0:
+        stream.seek(offset, 1)
     con = GlobalsData.parse_stream(stream)
-    #import pdb
-    #pdb.set_trace()
-    for sc in con:
-        merge_subcon(sc, 'data')
+    # ap(todo)
+    #for sc in con:
+    #    merge_subcon(sc, 'data')
     return con

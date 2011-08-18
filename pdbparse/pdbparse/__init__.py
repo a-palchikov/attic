@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from struct import unpack,calcsize
-from construct import HexDumpAdapter, String, CString
+from construct import HexDumpAdapter, String, CString, ListContainer
 
 debug = True
 if debug:
@@ -30,6 +30,17 @@ def _pages(length, pagesize):
     if (length % pagesize): num_pages += 1
     return num_pages
 
+class PDataCache:
+    def __init__(self, start_page=-1, end_page=-1, data_buffer=None):
+        self.pn_start = start_page
+        self.pn_end = end_page
+        self.buffer = data_buffer
+
+    def __eq__(self, other):
+        return self.pn_start == other[0] and self.pn_end == other[1]
+    def __nq__(self, other):
+        return self.pn_start != other[0] or self.pn_end != other[1]
+
 class StreamFile:
     def __init__(self, fp, pages, size=-1, page_size=0x1000):
         self.fp = fp
@@ -38,6 +49,11 @@ class StreamFile:
         if size == -1: self.end = len(pages)*page_size
         else: self.end = size
         self.pos = 0
+        self.thunk = size % self.page_size
+        # data cache
+        self.pdata = PDataCache()
+
+    """
     def read(self, size=-1):
         if size == -1:
             pn_start, off_start = self._get_page(self.pos)
@@ -51,6 +67,25 @@ class StreamFile:
             self.pos += size
 
             return pdata[off_start:-(self.page_size - off_end)]
+    """
+
+    def read(self, size=-1):
+        if size == -1:
+            pn_start, off_start = self._get_page(self.pos)
+            pdata = self._read_pages(self.pages[pn_start:])
+            self.pos = self.end
+            return pdata[off_start:self.end-off_start]
+        else:
+            if self.pos >= self.end:
+                #print 'read(size=%d): reading past self.end(=%d), return empty' % (size, self.end)
+                return ''
+            pn_start, off_start = self._get_page(self.pos)
+            pn_end, off_end = self._get_page(self.pos + size)
+            pdata = self._read_pages(self.pages[pn_start:pn_end+1])
+            self.pos += size
+
+            return pdata[off_start:-(self.page_size - off_end)]
+
     def seek(self, offset, whence=0):
         if whence == 0:
             self.pos = offset
@@ -102,7 +137,7 @@ class PDBStream:
         else: self.size = size
         self.stream_file = StreamFile(fp, pages, size=size, page_size=page_size)
 
-    # default load grabs the first page wrapped with HexDumpAdapter
+    # default load grabs the first page wrapped in HexDumpAdapter
     def load(self):
         self.raw_buffer = HexDumpAdapter(String('Raw_Data', self.page_size)).parse_stream(self.stream_file)
 
@@ -261,7 +296,16 @@ class PDBGlobalSymbolStream(PDBStream):
         #self.funcs.sort()
 
         # ap(todo): extract more information
-        del self.globals
+        #del self.globals
+
+class PDBPrivateSymbolStream(PDBStream):
+    def __init__(self, fp, pages, index, size, page_size=0x1000):
+        PDBStream.__init__(self, fp, pages, index, size=size, page_size=page_size)
+        self.load()
+    def load(self):
+        import gdata
+        self.globals = gdata.parse_stream(self.stream_file, 4)
+
 
 class PDBFPOStream(PDBStream):
     def __init__(self, fp, pages, index, size=-1, page_size=0x1000):
@@ -298,9 +342,8 @@ _stream_types2 = {
 }
 
 class PDB:
-    def __init__(self, fp, load_type_info=False):
+    def __init__(self, fp):
         self.fp = fp
-        self.load_type_info = load_type_info
 
     def read(self, pages, size=-1):
         """Read a portion of this PDB file, given a list of pages.
@@ -335,8 +378,13 @@ class PDB:
             pdb_stream = pdb_cls(self.fp, stream_pages, i, size=stream_size,
                                 page_size=self.page_size)
             self.streams.append(pdb_stream)
-            if isinstance(pdb_stream, PDBTypeStream) and self.load_type_info:
-                pdb_stream.load()
+
+    def load_type_info(self):
+        """
+        Loading type data requires explicit call to this method
+        Populates TPI stream
+        """
+        self.streams[DPB_STREAM_TPI].load()
 
 class PDB7(PDB):
     """Class representing a Microsoft PDB file, version 7.
@@ -346,8 +394,8 @@ class PDB7(PDB):
 
     """
 
-    def __init__(self, fp, load_type_info=False):
-        PDB.__init__(self, fp, load_type_info)
+    def __init__(self, fp):
+        PDB.__init__(self, fp)
         (self.signature, self.page_size, alloc_table_ptr,
          self.num_file_pages, root_size, reserved,
          root_index) = unpack(_PDB7_FMT, self.fp.read(_PDB7_FMT_SIZE))
@@ -371,18 +419,18 @@ class PDB7(PDB):
 
         self.read_root(self.root_stream)
 
-        # Load global symbols stream, if present
-        if self.streams[PDB_STREAM_DBI].sym_stream_no is not None:
-            sno = self.streams[PDB_STREAM_DBI].sym_stream_no
-            self.streams[sno] = PDBGlobalSymbolStream(self.fp, self.streams[sno].pages,
-                sno, size=self.streams[sno].size, page_size=self.page_size)
-
-        # Load all modules
+        # Load private symbol data
+        self.globals = ListContainer()
         if len(self.streams[PDB_STREAM_DBI].exhdrs) > 0:
             for module in self.streams[PDB_STREAM_DBI].exhdrs:
                 sno = module.file
-                self.streams[sno] = PDBGlobalSymbolStream(self.fp, self.streams[sno].pages,
-                    sno, size=self.streams[sno].size, page_size=self.page_size)
+                #pdb.set_trace()
+                if module.symbol_size > 0:
+                    self.streams[sno] = PDBPrivateSymbolStream(self.fp, self.streams[sno].pages,
+                        #sno, size=self.streams[sno].size, page_size=self.page_size)
+                        sno, size=module.symbol_size, page_size=self.page_size)
+                    self.merge_globals(self.streams[sno].globals)
+                    del self.streams[sno].globals
 
         # Load FPO data if available
         if self.streams[PDB_STREAM_DBI].fpoext_stream_no is not None:
@@ -395,9 +443,27 @@ class PDB7(PDB):
             self.streams[sno] = PDBNamesStream(self.fp, self.streams[sno].pages,
                 sno, size=self.streams[sno].size, page_size=self.page_size)
 
+    def load_public_info(self):
+        """
+        Loading public symbol information requires explicit call to this method
+        Populates global public stream
+        """
+        # Load global symbols stream, if present
+        if self.streams[PDB_STREAM_DBI].sym_stream_no is not None:
+            sno = self.streams[PDB_STREAM_DBI].sym_stream_no
+            self.streams[sno] = PDBGlobalSymbolStream(self.fp, self.streams[sno].pages,
+                sno, size=self.streams[sno].size, page_size=self.page_size)
+
+    def merge_globals(self, globals):
+        """
+        Merge globals to self.globals
+        """
+        # ap(todo): filter?..
+        self.globals += globals
+
 class PDB2(PDB):
-    def __init__(self, fp, load_type_info=False):
-        PDB.__init__(self, fp, load_type_info)
+    def __init__(self, fp):
+        PDB.__init__(self, fp)
         (self.signature, self.page_size, start_page,
          self.num_file_pages, root_size, reserved) = unpack(_PDB2_FMT, 
                  self.fp.read(_PDB2_FMT_SIZE))
@@ -425,16 +491,16 @@ class PDB2(PDB):
 #            self.streams[gsf] = PDBGlobalSymbolStream(self.fp, self.streams[gsf].pages,
 #                gsf, size=self.streams[gsf].size, page_size=self.page_size,
 #
-def parse(filename, load_type_info=False):
+def parse(filename):
     "Open a PDB file and autodetect its version"
     f = open(filename, 'rb')
     sig = f.read(_PDB7_SIGNATURE_LEN)
     f.seek(0)
     if sig == _PDB7_SIGNATURE:
-        return PDB7(f, load_type_info)
+        return PDB7(f)
     else:
         sig = f.read(_PDB2_SIGNATURE_LEN)
         if sig == _PDB2_SIGNATURE:
             f.seek(0)
-            return PDB2(f, load_type_info)
+            return PDB2(f)
     raise ValueError("Unsupported file type")
