@@ -23,6 +23,7 @@
 extern int _ConvertCommandLineToArgcArgv();
 extern TCHAR *_ppszArgv[];
 
+// credits to Andy Polyakov (appro at fy.chalmers.se)
 static void _memmove (void *dst, void *src, size_t n)
 { 
 	unsigned char *d = (unsigned char*)dst, *s = (unsigned char*)src;
