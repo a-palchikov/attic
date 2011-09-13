@@ -1,9 +1,7 @@
-from construct import *
+#!/usr/bin/env python
 
-# ap(g1003): disabled for debugging purposes
-#from StringIO import StringIO
-from cStringIO import StringIO
-from utils import PrintContext
+from construct import *
+from pdbparse.utils import PrintContext, StringIO
 
 _strarray = GreedyRange(CString("names"))
 

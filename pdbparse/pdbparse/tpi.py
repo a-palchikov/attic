@@ -1,14 +1,7 @@
 #!/usr/bin/env python
 
 from construct import *
-
-# ap(g1003): disabled for debugging purposes
-#from StringIO import StringIO
-from cStringIO import StringIO
-
-# ap: debugging
-import pdb
-from utils import PrintContext, AlignedStruct4, merge_subcon, AltBitStruct
+from pdbparse.utils import PrintContext, AlignedStruct4, merge_subcon, AltBitStruct, StringIO
 
 def dump_types(types, fname):
     with open(fname, 'w') as f:
@@ -874,7 +867,6 @@ Type = Debugger(Struct("type",
 Type = Struct("types",
     ULInt16("length"),
     Tunnel(
-        #String("type_data", lambda ctx: ctx.length),
         MetaField("type_data", lambda ctx: ctx.length),
         Type,
     ),
@@ -989,10 +981,7 @@ def resolve_typerefs(leaf, types, min):
                 if ref < min:
                     setattr(leaf, attr, base_type._decode(ref,{}))
                 elif ref >= min:
-                    try:
-                        setattr(leaf, attr, types[ref])
-                    except KeyError:
-                        pdb.set_trace()
+                    setattr(leaf, attr, types[ref])
     else:
         #print 'resolve_typerefs: no type information for leaf type %s' % leaf.leaf_type
         pass

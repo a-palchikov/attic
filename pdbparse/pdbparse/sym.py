@@ -241,25 +241,26 @@ sym_id = Enum(ULInt16('sym_id'),
     S_MANTYPREF       = 0x1028,
     S_UNAMESPACE_ST   = 0x1029,
 
+    S_END             = 0x0006,     # end of block/function
     S_ST_MAX          = 0x1100,
     S_OBJNAME         = 0x1101,
     S_THUNK32         = 0x1102,
-    S_BLOCK32         = 0x1103,
+    S_BLOCK32         = 0x1103,     # part of a function (non-contiguous function)
     S_WITH32          = 0x1104,
     S_LABEL32         = 0x1105,
-    S_REGISTER        = 0x1106,
+    S_REGISTER        = 0x1106,     # function parameters and locals
     S_CONSTANT        = 0x1107,
     S_UDT             = 0x1108,
     S_COBOLUDT        = 0x1109,
     S_MANYREG         = 0x110A,
-    S_BPREL32         = 0x110B,
-    S_LDATA32         = 0x110C,
+    S_BPREL32         = 0x110B,     # function parameters and locals
+    S_LDATA32         = 0x110C,     # global and local data symbols
     S_GDATA32         = 0x110D,
     S_PUB32           = 0x110E,
     S_LPROC32         = 0x110F,
     S_GPROC32         = 0x1110,
-    S_REGREL32        = 0x1111,
-    S_LTHREAD32       = 0x1112,
+    S_REGREL32        = 0x1111,     # function parameters and locals
+    S_LTHREAD32       = 0x1112,     # variables with thread-local storage
     S_GTHREAD32       = 0x1113,
     S_LPROCMIPS       = 0x1114,
     S_GPROCMIPS       = 0x1115,
@@ -321,10 +322,10 @@ symInfo = AlignedStruct4('sym_info',
             'S_SECUCOOKIE': symSecurityCookie,
             'S_OBJNAME': symCompiland,
         },
-        #default = Pass,
-        default = HexDumpAdapter(
-            Field('data', lambda ctx: ctx._.length - 2)
-        ),
+        default = Pass,
+        #default = HexDumpAdapter(
+        #    Field('data', lambda ctx: ctx._.length - 2)
+        #),
     ),
 )
 
@@ -338,45 +339,3 @@ Symbols = Debugger(Struct('symbols',
     ),
 ))
 
-start_end = Struct('start_end',
-        ULint32('start'),
-        ULint32('end'),
-)
-
-line_table = Struct('line_table',
-    ULInt16('segment'),
-    ULInt16('num_lines'),
-    Array(lambda ctx: ctx.num_lines, ULInt32('offsets')),
-)
-
-line_table_V2 = Struct('line_table',
-    ULInt32('hdr'),
-    ULInt32('size'),
-)
-
-line_table_file_V2 = Struct('line_table_file',
-    ULInt32('RVA'),         # offset in string table for filename
-    ULInt16('unk'),         # wine: seems to always contain 0x0110
-    MetaField('md5', lambda ctx: 16),   # file MD5 signature
-    ULInt8('pad0'),
-)
-
-line_table_files_V2 = Struct('line_table_files',
-    line_table_V2,
-    GreedyRange(line_table_file_V2),        # where is the count?
-)
-
-line_table_lines_V2 = Struct('line_table_lines',
-    line_table_V2,
-    ULInt32('start'),       # address -> function with line numberss
-    ULInt32('segment'),     # function segment
-    ULInt32('size'),        # block (function) size
-    ULInt32('file_RVA'),
-    ULInt32('num_lines'),   # total number of lines
-    ULInt32('size_lines'),  # bytes for line number information
-    Array(lambda ctx: ctx.num_lines,
-        Struct('lines',
-            ULInt32('RVA'),
-            ULInt32('line_number'),
-    )),
-)

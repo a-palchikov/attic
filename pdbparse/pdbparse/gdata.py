@@ -1,13 +1,15 @@
+# /usr/bin/env python
+
 from construct import *
-from cStringIO import StringIO
 from pdbparse.tpi import merge_subcon
-from pdbparse.utils import aligned4
+from pdbparse.utils import aligned4, StringBuffer, StringIO
 
 symPub = Struct('public_symbol',
     ULInt32('symtype'),
     ULInt32('offset'),
     ULInt16('segment'),
-    CString('name'),
+    Anchor('_end'),
+    StringBuffer('name', lambda ctx: ctx._._.sizeof - ctx._end),
 )
 
 symProc = Struct('method',
@@ -21,18 +23,21 @@ symProc = Struct('method',
     ULInt32('offset'),
     ULInt16('segment'),
     ULInt8('flags'),
-    CString('name'),
+    Anchor('_end'),
+    StringBuffer('name', lambda ctx: ctx._._.sizeof - ctx._end),
 )
 
 symConst = Struct('const',
     ULInt32('type'),
     ULInt16('cvalue'),
-    CString('name'),
+    Anchor('_end'),
+    StringBuffer('name', lambda ctx: ctx._._.sizeof - ctx._end),
 )
 
 symUdt = Struct('udt',
     ULInt32('type'),
-    CString('name'),
+    Anchor('_end'),
+    StringBuffer('name', lambda ctx: ctx._._.sizeof - ctx._end),
 )
 
 symThunk = Struct('plt_slot',
@@ -43,10 +48,12 @@ symThunk = Struct('plt_slot',
     ULInt16('segemnt'),
     ULInt16('length'),
     ULInt8('type'),
-    CString('name'),
+    Anchor('_end'),
+    StringBuffer('name', lambda ctx: ctx._._.sizeof - ctx._end),
 )
 
 sym_id = Enum(ULInt16('sym_id'),
+    S_UDT             = 0x1108,
     # public symbols (functions and global variables specified as extern)
     S_PUB32           = 0x110E,
     # global and static functions
@@ -64,11 +71,9 @@ gsym = Struct("global",
             'S_PUB32': symPub,          # public symbols
             'S_GPROC32': symProc,       # global/local methods/functions
             'S_LPROC32': symProc,
+            #'S_UDT': symUdt,
         },
         default = Pass,
-        #default = HexDumpAdapter(
-        #    Field("data", lambda ctx: ctx._.sizeof-2)
-        #),
     ),
 )
 
@@ -89,14 +94,13 @@ GlobalsData = GreedyRange(Struct("globals",
     ),
 ))
 
-def parse(data, offset):
+def parse(data, offset=0):
     return parse_stream(StringIO(data), offset)
 
-def parse_stream(stream, offset):
+def parse_stream(stream, offset=0):
     if offset > 0:
         stream.seek(offset, 1)
     con = GlobalsData.parse_stream(stream)
-    # ap(todo)
-    #for sc in con:
-    #    merge_subcon(sc, 'data')
+    for sc in con:
+        merge_subcon(sc, 'globals')
     return con

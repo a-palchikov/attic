@@ -1,9 +1,14 @@
 # /usr/bin/env python
 
-from construct import *
+from construct import Construct, Struct, Adapter, Anchor, Restream, StringAdapter, Field
 from construct.lib import BitStreamReader, BitStreamWriter
 
-__all__ = ['PrintContext', 'AlignedStruct4', 'SizedStruct', 'merge_subcon', 'aligned4', 'get_parsed_size']
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from StringIO import StringIO
+
+__all__ = ['PrintContext', 'AlignedStruct4', 'SizedStruct', 'merge_subcon', 'aligned4', 'get_parsed_size', 'StringBuffer', 'HexDumpAdapter']
 
 DWORD_ = 4
 
@@ -47,6 +52,8 @@ class SizedStruct(Struct):
     def __init__(self, name, *subcons, **kw):
         subcons = (Anchor("_start"),) + subcons + (Anchor("_end"),)
         Struct.__init__(self, name, *subcons, **kw)
+    def size(self):
+        return get_parsed_size(self)
 
 class AlignedStruct4(SizedStruct):
     def _parse(self, stream, context):
@@ -58,6 +65,71 @@ class AlignedStruct4(SizedStruct):
             stream.read(aligned_length - size)
         return data
 
+def StringBuffer(name, length, encoding=None):
+    """String buffer with known size
+    """
+    length_fn = callable(length) and length or (lambda ctx: length)
+    return StringAdapter(
+        Field(name, length_fn),
+        encoding=encoding,
+    )
+
+def OnDemandString(name):
+    return OnDemand(CString(name))
+
+_printable = dict((chr(i), ".") for i in range(256))
+_printable.update((chr(i), chr(i)) for i in range(32, 128))
+ 
+def hexdump(data, linesize = 16, showoffset = True, showascii = True):
+    prettylines = []
+    if showoffset:
+        if len(data) < 65536:
+            fmt = "%04X   "
+        else:
+            fmt = "%08X   "
+    for i in xrange(0, len(data), linesize):
+        line = data[i : i + linesize]
+        hextext = " ".join(b.encode("hex") for b in line)
+        rawtext = "".join(_printable[b] for b in line)
+        result = ""
+        if showoffset:
+            result += fmt % i
+        result += "%-*s" % (3 * linesize - 1, hextext)
+        if showascii:
+            result += "   %s" % rawtext
+        prettylines.append(result)
+    return prettylines
+ 
+class HexString(str):
+    """Represents a string that will be hex-dumped (only via __pretty_str__).
+    this class derives of str, and behaves just like a normal string in all
+    other contexts.
+    """
+    def __init__(self, data, linesize = 16, showoffset = True, showascii = True):
+        str.__init__(self, data)
+        self.linesize = linesize
+        self.showoffset = showoffset
+        self.showascii = showascii
+    def __new__(cls, data, *args, **kwargs):
+        return str.__new__(cls, data)
+    def __pretty_str__(self, nesting = 1, indentation = "    "):
+        sep = "\n" + indentation * nesting
+        return sep + sep.join(hexdump(self, self.linesize, self.showoffset, self.showascii))
+
+class HexDumpAdapter(Adapter):
+    """Adapter for hex-dumping strings. It returns a HexString, which is a string
+    """
+    __slots__ = ["linesize", "showoffset", "showascii"]
+    def __init__(self, subcon, linesize = 16, showoffset = True, showascii = True):
+        Adapter.__init__(self, subcon)
+        self.linesize = linesize
+        self.showoffset = showoffset
+        self.showascii = showascii
+    def _encode(self, obj, context):
+        return obj
+    def _decode(self, obj, context):
+        return HexString(obj, linesize=self.linesize, showoffset=self.showoffset, showascii=self.showascii)
+
 def merge_subcon(parent, subattr):
     """Merge a subcon's fields into its parent.
 
@@ -66,7 +138,6 @@ def merge_subcon(parent, subattr):
     """
 
     subcon = getattr(parent, subattr)
-    # ap ** subcon is None (or how can this be?..) **
     if subcon is None:
         #print 'No %s.%s attribute defined ()' % (repr(parent), subattr)
         pass

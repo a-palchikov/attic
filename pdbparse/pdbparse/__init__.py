@@ -2,6 +2,8 @@
 
 from struct import unpack,calcsize
 from construct import HexDumpAdapter, String, CString, ListContainer
+import os
+from pdbparse.utils import StringIO
 
 debug = True
 if debug:
@@ -35,11 +37,18 @@ class PDataCache:
         self.pn_start = start_page
         self.pn_end = end_page
         self.buffer = data_buffer
-
     def __eq__(self, other):
+        """
+        Compares data cache to a tuple
+        Tuple is not type-checked since it's internal use only
+        """
         return self.pn_start == other[0] and self.pn_end == other[1]
-    def __nq__(self, other):
-        return self.pn_start != other[0] or self.pn_end != other[1]
+    def __ne__(self, other):
+        return not (self == other)
+    def set_cached(self, start, end, buffer):
+        self.pn_start = start
+        self.pn_end = end
+        self.buffer = buffer
 
 class StreamFile:
     def __init__(self, fp, pages, size=-1, page_size=0x1000):
@@ -49,25 +58,8 @@ class StreamFile:
         if size == -1: self.end = len(pages)*page_size
         else: self.end = size
         self.pos = 0
-        self.thunk = size % self.page_size
         # data cache
         self.pdata = PDataCache()
-
-    """
-    def read(self, size=-1):
-        if size == -1:
-            pn_start, off_start = self._get_page(self.pos)
-            pdata = self._read_pages(self.pages[pn_start:])
-            self.pos = self.end
-            return pdata[off_start:self.end-off_start]
-        else:
-            pn_start, off_start = self._get_page(self.pos)
-            pn_end, off_end = self._get_page(self.pos + size)
-            pdata = self._read_pages(self.pages[pn_start:pn_end+1])
-            self.pos += size
-
-            return pdata[off_start:-(self.page_size - off_end)]
-    """
 
     def read(self, size=-1):
         if size == -1:
@@ -77,29 +69,35 @@ class StreamFile:
             return pdata[off_start:self.end-off_start]
         else:
             if self.pos >= self.end:
-                #print 'read(size=%d): reading past self.end(=%d), return empty' % (size, self.end)
                 return ''
             pn_start, off_start = self._get_page(self.pos)
             pn_end, off_end = self._get_page(self.pos + size)
-            pdata = self._read_pages(self.pages[pn_start:pn_end+1])
+            #"""
+            if self.pdata == (pn_start, pn_end):
+                pdata = self.pdata.buffer
+            else:
+                pdata = self._read_pages(self.pages[pn_start:pn_end+1])
+                self._set_cached(pn_start, pn_end, pdata)
+            #"""
+            #pdata = self._read_pages(self.pages[pn_start:pn_end+1])
+
             self.pos += size
-
             return pdata[off_start:-(self.page_size - off_end)]
-
-    def seek(self, offset, whence=0):
-        if whence == 0:
+    def seek(self, offset, whence=os.SEEK_SET):
+        if whence == os.SEEK_SET:
             self.pos = offset
-        elif whence == 1:
+        elif whence == os.SEEK_CUR:
             self.pos += offset
-        elif whence == 2:
+        elif whence == os.SEEK_END:
             self.pos = self.end + offset
-        
         if self.pos < 0: self.pos = 0
         if self.pos > self.end: self.pos = self.end
     def tell(self):
         return self.pos
     def close(self):
         self.fp.close()
+    def _set_cached(self, pn_start, pn_end, buffer):
+        self.pdata.set_cached(pn_start, pn_end, buffer)
 
     # Private helper methods
     def _get_page(self, offset):
@@ -237,14 +235,12 @@ class PDBInfoStream(PDBStream):
         for i in xrange(inf.NumNames):
             self.names[CString("foo").parse(inf.NameBuffer[inf.NameStreams[i].Offset:])] = inf.NameStreams[i].StreamIndex
 
-        #pdb.set_trace()
         del inf
 
 class PDBTypeStream(PDBStream):
     def __init__(self, fp, pages, index=PDB_STREAM_TPI, size=-1,
             page_size=0x1000):
         PDBStream.__init__(self, fp, pages, index, size=size, page_size=page_size)
-        #self.load()
     def load(self,unnamed_hack=True,elim_fwdrefs=True):
         import tpi
         tpis = tpi.parse_stream(self.stream_file,unnamed_hack,elim_fwdrefs)
@@ -277,7 +273,6 @@ class PDBDebugStream(PDBStream):
         self.fpoext_stream_no = debug.StreamIndexesData.FPO_EXT
         self.exhdrs = debug.DBIExHeaders
         
-        #pdb.set_trace()
         del debug
 
 class PDBGlobalSymbolStream(PDBStream):
@@ -288,16 +283,6 @@ class PDBGlobalSymbolStream(PDBStream):
         import gdata
         self.globals = gdata.parse_stream(self.stream_file)
 
-        #pdb.set_trace()
-        #self.funcs = {g.offset : g for g in globals if getattr(g, 'symtype', None) is not None and g.symtype == 0x2}
-
-        # ap: give priority to private symbols (SYMOPT_NO_PUBLICS)
-        #self.funcs = {g.data.offset : g for g in self.globals if getattr(g.data, 'symtype', None) is None}
-        #self.funcs.sort()
-
-        # ap(todo): extract more information
-        #del self.globals
-
 class PDBPrivateSymbolStream(PDBStream):
     def __init__(self, fp, pages, index, size, page_size=0x1000):
         PDBStream.__init__(self, fp, pages, index, size=size, page_size=page_size)
@@ -305,7 +290,6 @@ class PDBPrivateSymbolStream(PDBStream):
     def load(self):
         import gdata
         self.globals = gdata.parse_stream(self.stream_file, 4)
-
 
 class PDBFPOStream(PDBStream):
     def __init__(self, fp, pages, index, size=-1, page_size=0x1000):
@@ -322,8 +306,6 @@ class PDBNamesStream(PDBStream):
     def load(self):
         import fpo
         self.records = fpo.FPO_STRING_DATA.parse_stream(self.stream_file)
-
-        #pdb.set_trace()
 
 # Class mappings for the stream types
 _stream_types7 = {
@@ -343,7 +325,9 @@ _stream_types2 = {
 
 class PDB:
     def __init__(self, fp):
-        self.fp = fp
+        #self.fp = fp
+        import mmap
+        self.fp = mmap.mmap(fp.fileno(), 0)
 
     def read(self, pages, size=-1):
         """Read a portion of this PDB file, given a list of pages.
@@ -380,11 +364,19 @@ class PDB:
             self.streams.append(pdb_stream)
 
     def load_type_info(self):
-        """
-        Loading type data requires explicit call to this method
-        Populates TPI stream
+        """Populates type information stream
         """
         self.streams[DPB_STREAM_TPI].load()
+
+    def guid(self):
+        """PDB GUID helper
+        """
+        return self.streams[PDB_STREAM_PDB].GUID
+
+    def age(self):
+        """PDB age helper
+        """
+        return self.streams[PDB_STREAM_PDB].Age
 
 class PDB7(PDB):
     """Class representing a Microsoft PDB file, version 7.
@@ -424,10 +416,8 @@ class PDB7(PDB):
         if len(self.streams[PDB_STREAM_DBI].exhdrs) > 0:
             for module in self.streams[PDB_STREAM_DBI].exhdrs:
                 sno = module.file
-                #pdb.set_trace()
                 if module.symbol_size > 0:
                     self.streams[sno] = PDBPrivateSymbolStream(self.fp, self.streams[sno].pages,
-                        #sno, size=self.streams[sno].size, page_size=self.page_size)
                         sno, size=module.symbol_size, page_size=self.page_size)
                     self.merge_globals(self.streams[sno].globals)
                     del self.streams[sno].globals
